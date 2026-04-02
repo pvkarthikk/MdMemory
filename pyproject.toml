@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mdmemory"
-version = "0.1.0"
+version = "0.1.1"
 description = "Markdown-first, LLM-driven memory framework organized into a hierarchical Knowledge Tree"
 readme = "README.md"
 requires-python = ">=3.9"
