@@ -4,31 +4,54 @@ from pathlib import Path
 from mdmemory import MdMemory
 
 
-class SimpleLLM:
-    """Simple LLM mock for demo purposes."""
+def create_llm_callback():
+    """Create a simple LLM callback for demo purposes.
 
-    def completion(self, **kwargs):
-        """Return a simple response."""
+    This demonstrates how to create a callback that works with any LLM provider.
+    """
 
-        class MockChoice:
-            class MockMessage:
-                content = """{
-                    "action": "store",
-                    "recommended_path": "general_knowledge",
-                    "frontmatter": {
-                        "topic": "demo_topic",
-                        "summary": "A demonstration of MdMemory functionality",
-                        "tags": ["demo", "example"]
-                    },
-                    "optimize_suggested": false
-                }"""
+    def llm_callback(messages: list) -> str:
+        """
+        LLM callback function.
 
-            message = MockMessage()
+        Args:
+            messages: List of message dicts with 'role' and 'content'
 
-        class MockResponse:
-            choices = [MockChoice()]
+        Returns:
+            LLM response as string
 
-        return MockResponse()
+        Example implementations:
+
+        # Using LiteLLM:
+        from litellm import completion
+        response = completion(model="gpt-3.5-turbo", messages=messages)
+        return response.choices[0].message.content
+
+        # Using OpenAI directly:
+        from openai import OpenAI
+        client = OpenAI()
+        response = client.chat.completions.create(model="gpt-3.5-turbo", messages=messages)
+        return response.choices[0].message.content
+
+        # Using Claude:
+        from anthropic import Anthropic
+        client = Anthropic()
+        response = client.messages.create(model="claude-3-sonnet", messages=messages)
+        return response.content[0].text
+        """
+        # For this demo, return a simple mocked response
+        return """{
+            "action": "store",
+            "recommended_path": "general_knowledge",
+            "frontmatter": {
+                "topic": "demo_topic",
+                "summary": "A demonstration of MdMemory functionality",
+                "tags": ["demo", "example"]
+            },
+            "optimize_suggested": false
+        }"""
+
+    return llm_callback
 
 
 def main():
@@ -37,8 +60,15 @@ def main():
     storage_path = Path("./example_knowledge_base")
     storage_path.mkdir(exist_ok=True)
 
-    llm = SimpleLLM()
-    memory = MdMemory(llm, str(storage_path), optimize_threshold=10)
+    # Create LLM callback
+    llm_callback = create_llm_callback()
+
+    # Create MdMemory with the callback
+    memory = MdMemory(
+        llm_callback,
+        str(storage_path),
+        optimize_threshold=10,
+    )
 
     print("📚 MdMemory Example\n")
 

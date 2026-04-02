@@ -2,10 +2,11 @@
 
 import asyncio
 import json
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from .models import FrontMatter, LLMResponse
 from .registry import PathRegistry
@@ -18,21 +19,145 @@ from .utils import (
     write_markdown_file,
 )
 
+# Type alias for LLM callback function
+LLMCallback = Callable[[List[Dict[str, str]]], str]
+
+
+class LiteLLMCallback:
+    """Built-in callback for LiteLLM integration."""
+
+    def __init__(self, model: str = "gpt-3.5-turbo"):
+        """Initialize LiteLLM callback.
+
+        Args:
+            model: LLM model name (default: gpt-3.5-turbo)
+        """
+        self.model = model
+        self.completion = None
+        self._initialize()
+
+    def _initialize(self):
+        """Lazy initialize LiteLLM to avoid import errors."""
+        try:
+            from litellm import completion
+
+            self.completion = completion
+        except ImportError:
+            raise ImportError("LiteLLM not installed. Install with: pip install litellm")
+
+    def __call__(self, messages: List[Dict[str, str]]) -> str:
+        """Call LiteLLM API.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+
+        Returns:
+            LLM response as string
+        """
+        if self.completion is None:
+            self._initialize()
+
+        response = self.completion(model=self.model, messages=messages)
+        return response.choices[0].message.content
+
+
+class OpenAICallback:
+    """Built-in callback for OpenAI integration."""
+
+    def __init__(self, model: str = "gpt-3.5-turbo", api_key: Optional[str] = None):
+        """Initialize OpenAI callback.
+
+        Args:
+            model: OpenAI model name (default: gpt-3.5-turbo)
+            api_key: OpenAI API key (if not set, uses OPENAI_API_KEY env var)
+        """
+        self.model = model
+        self.api_key = api_key
+        self.client = None
+        self._initialize()
+
+    def _initialize(self):
+        """Lazy initialize OpenAI client."""
+        try:
+            from openai import OpenAI
+
+            self.client = OpenAI(api_key=self.api_key) if self.api_key else OpenAI()
+        except ImportError:
+            raise ImportError("OpenAI not installed. Install with: pip install openai")
+
+    def __call__(self, messages: List[Dict[str, str]]) -> str:
+        """Call OpenAI API.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+
+        Returns:
+            LLM response as string
+        """
+        if self.client is None:
+            self._initialize()
+
+        response = self.client.chat.completions.create(model=self.model, messages=messages)
+        return response.choices[0].message.content
+
+
+class AnthropicCallback:
+    """Built-in callback for Anthropic Claude integration."""
+
+    def __init__(self, model: str = "claude-3-sonnet-20240229", api_key: Optional[str] = None):
+        """Initialize Anthropic callback.
+
+        Args:
+            model: Claude model name (default: claude-3-sonnet-20240229)
+            api_key: Anthropic API key (if not set, uses ANTHROPIC_API_KEY env var)
+        """
+        self.model = model
+        self.api_key = api_key
+        self.client = None
+        self._initialize()
+
+    def _initialize(self):
+        """Lazy initialize Anthropic client."""
+        try:
+            from anthropic import Anthropic
+
+            self.client = Anthropic(api_key=self.api_key) if self.api_key else Anthropic()
+        except ImportError:
+            raise ImportError("Anthropic not installed. Install with: pip install anthropic")
+
+    def __call__(self, messages: List[Dict[str, str]]) -> str:
+        """Call Anthropic API.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+
+        Returns:
+            LLM response as string
+        """
+        if self.client is None:
+            self._initialize()
+
+        response = self.client.messages.create(model=self.model, messages=messages, max_tokens=4096)
+        return response.content[0].text
+
 
 class MdMemory:
     """Markdown-first, LLM-driven memory framework."""
 
     SYSTEM_PROMPT = """You are the MdMemory Librarian. Your goal is to maintain a clean, hierarchical Markdown Knowledge Tree. When storing data, choose a logical path. When optimizing, group related files into sub-directories to keep the root index under 50 lines. Always return JSON containing: `action`, `recommended_path`, `frontmatter`, and `optimize_suggested`."""
 
-    def __init__(self, llm: Any, storage_path: str, optimize_threshold: int = 20):
+    def __init__(self, llm_callback: LLMCallback, storage_path: str, optimize_threshold: int = 20):
         """Initialize MdMemory.
 
         Args:
-            llm: LiteLlm instance for LLM calls
+            llm_callback: Callback function for LLM calls.
+                         Signature: (messages: List[Dict[str, str]]) -> str
+                         Messages format: [{"role": "user", "content": "prompt"}]
+                         Should return LLM response as a string (preferably JSON)
             storage_path: Root path for storage
             optimize_threshold: Line count threshold for triggering optimize
         """
-        self.llm = llm
+        self.llm_callback = llm_callback
         self.storage_path = Path(storage_path)
         self.optimize_threshold = optimize_threshold
 
@@ -60,7 +185,7 @@ class MdMemory:
         content = "# Knowledge Tree\n\nWelcome to MdMemory. This is the root index.\n\n"
         write_markdown_file(self.root_index_path, metadata, content)
 
-    def _get_llm_decision(self, action: str, context: Dict[str, Any]) -> Optional[LLMResponse]:
+    def _get_llm_decision(self, action: str, context: Dict[str, str]) -> Optional[LLMResponse]:
         """Call LLM for organizational decisions.
 
         Args:
@@ -85,17 +210,12 @@ Please respond with a JSON object containing:
 - optimize_suggested: Boolean indicating if optimization is needed
 """
 
-            # Call LLM (assuming litellm API)
-            response = self.llm.completion(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-            )
+            # Call LLM callback with messages
+            messages = [{"role": "user", "content": prompt}]
+            response_text = self.llm_callback(messages)
 
-            response_text = response.choices[0].message.content
-            # Try to extract JSON
+            # Try to extract JSON from response
             try:
-                import re
-
                 json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
                 if json_match:
                     response_json = json.loads(json_match.group())
@@ -124,7 +244,9 @@ Please respond with a JSON object containing:
         if topic:
             context["topic"] = topic
         else:
-            context["topic"] = "NOT_PROVIDED - Please generate a concise topic ID from the query content"
+            context["topic"] = (
+                "NOT_PROVIDED - Please generate a concise topic ID from the query content"
+            )
 
         # Call LLM to determine folder path and frontmatter
         llm_response = self._get_llm_decision("store", context)

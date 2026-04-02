@@ -16,12 +16,11 @@ from mdmemory.utils import (
 
 
 class MockLLM:
-    """Mock LLM for testing."""
+    """Mock LLM callback for testing."""
 
-    def completion(self, **kwargs):
-        """Mock completion method that parses the context."""
+    def __call__(self, messages: list) -> str:
+        """Mock LLM callback that parses messages and returns JSON response."""
         # Extract messages to determine the topic
-        messages = kwargs.get("messages", [])
         topic = "generated_topic"
 
         if messages:
@@ -29,32 +28,24 @@ class MockLLM:
             # Try to extract topic from context
             if '"topic"' in content:
                 import re
+
                 match = re.search(r'"topic":\s*"([^"]+)"', content)
                 if match:
                     topic_value = match.group(1)
                     if not topic_value.startswith("NOT_PROVIDED"):
                         topic = topic_value
 
-        class MockChoice:
-            class MockMessage:
-                def __init__(self, t):
-                    self.content = f"""{{
+        # Return JSON response as string
+        return f"""{{
 "action": "store",
 "recommended_path": "test",
 "frontmatter": {{
-    "topic": "{t}",
+    "topic": "{topic}",
     "summary": "test summary",
     "tags": []
 }},
 "optimize_suggested": false
 }}"""
-
-            message = MockMessage(topic)
-
-        class MockResponse:
-            choices = [MockChoice()]
-
-        return MockResponse()
 
 
 @pytest.fixture
@@ -67,8 +58,8 @@ def temp_storage():
 @pytest.fixture
 def memory(temp_storage):
     """MdMemory instance with temp storage."""
-    llm = MockLLM()
-    return MdMemory(llm, str(temp_storage), optimize_threshold=5)
+    llm_callback = MockLLM()
+    return MdMemory(llm_callback, str(temp_storage), optimize_threshold=5)
 
 
 class TestRegistry:

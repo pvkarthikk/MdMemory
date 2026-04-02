@@ -25,11 +25,32 @@ pip install -e ".[dev]"
 
 ```python
 from mdmemory import MdMemory
-from litellm import LiteLLM
 
-# Initialize with LiteLLM
-llm = LiteLLM("gpt-3.5-turbo")
-memory = MdMemory(llm, storage_path="./knowledge_base", optimize_threshold=20)
+# Define your LLM callback function
+# It receives messages and should return LLM response as a string
+def llm_callback(messages: list) -> str:
+    """
+    LLM callback function that handles LLM provider communication.
+    
+    You can use any LLM provider: OpenAI, Claude, Gemini, Ollama, etc.
+    """
+    # Example with LiteLLM (supports all major providers)
+    from litellm import completion
+    response = completion(model="gpt-3.5-turbo", messages=messages)
+    return response.choices[0].message.content
+    
+    # Or use OpenAI directly
+    # from openai import OpenAI
+    # client = OpenAI()
+    # response = client.chat.completions.create(model="gpt-3.5-turbo", messages=messages)
+    # return response.choices[0].message.content
+
+# Initialize MdMemory with the callback
+memory = MdMemory(
+    llm_callback,
+    storage_path="./knowledge_base",
+    optimize_threshold=20
+)
 
 # Store a memory WITH explicit topic
 topic = memory.store(
@@ -114,9 +135,36 @@ group related files into sub-directories to keep the root index under 50 lines.
 
 ## API Reference
 
-### `__init__(llm, storage_path, optimize_threshold=20)`
+### `__init__(llm_callback, storage_path, optimize_threshold=20)`
 
-Initialize MdMemory with an LLM instance and storage location.
+Initialize MdMemory with an LLM callback function.
+
+**Parameters:**
+- `llm_callback`: Callback function that receives messages and returns LLM response
+  - Signature: `(messages: List[Dict[str, str]]) -> str`
+  - Messages format: `[{"role": "user", "content": "prompt"}]`
+  - Should return the LLM response as a string (preferably JSON)
+- `storage_path`: Root directory path for storing markdown files
+- `optimize_threshold` (optional): Line count threshold for triggering auto-optimization (default: 20)
+
+**Example:**
+```python
+# Define a callback for your LLM provider
+def llm_callback(messages):
+    # Use any LLM provider here
+    from litellm import completion
+    response = completion(model="gpt-3.5-turbo", messages=messages)
+    return response.choices[0].message.content
+
+memory = MdMemory(llm_callback, "./knowledge_base")
+
+# Or use built-in callbacks
+from mdmemory import LiteLLMCallback, OpenAICallback, AnthropicCallback
+
+memory = MdMemory(LiteLLMCallback("gpt-3.5-turbo"), "./knowledge_base")
+memory = MdMemory(OpenAICallback("gpt-4"), "./knowledge_base")
+memory = MdMemory(AnthropicCallback("claude-3-sonnet"), "./knowledge_base")
+```
 
 ### `store(usr_id, query, topic=None) -> Optional[str]`
 
