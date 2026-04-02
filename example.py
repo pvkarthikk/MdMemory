@@ -42,11 +42,10 @@ def main():
 
     print("📚 MdMemory Example\n")
 
-    # Store some knowledge
-    print("1️⃣ Storing knowledge items...")
-    memory.store(
+    # Store some knowledge with explicit topics
+    print("1️⃣ Storing knowledge items WITH explicit topics...")
+    topic1 = memory.store(
         "user1",
-        "python_functions",
         """
 # Python Functions
 
@@ -64,11 +63,12 @@ def function_name(parameters):
 - Parameters are optional
 - Functions return values using `return` statement
 """,
+        topic="python_functions",
     )
+    print(f"   ✅ Stored as topic: {topic1}")
 
-    memory.store(
+    topic2 = memory.store(
         "user1",
-        "python_classes",
         """
 # Python Classes
 
@@ -86,18 +86,50 @@ class ClassName:
 - `__init__` is the constructor
 - `self` refers to the instance
 """,
+        topic="python_classes",
     )
+    print(f"   ✅ Stored as topic: {topic2}")
+
+    # Store knowledge WITHOUT explicit topic - LLM generates it
+    print("\n1b️⃣ Storing knowledge WITHOUT explicit topic (LLM generates it)...")
+    generated_topic1 = memory.store(
+        "user1",
+        """
+Decorators are functions that modify other functions or classes.
+They are a way to "wrap" a function or class with another function.
+Common use cases include logging, authentication, validation, etc.
+""",
+    )
+    print(f"   ✅ LLM generated topic: {generated_topic1}")
+
+    generated_topic2 = memory.store(
+        "user1",
+        """
+List comprehensions provide a concise way to create lists in Python.
+Instead of using loops and append(), you can use a single line.
+Example: [x*2 for x in range(5)] creates [0, 2, 4, 6, 8]
+""",
+    )
+    print(f"   ✅ LLM generated topic: {generated_topic2}")
 
     # Retrieve knowledge tree
     print("\n2️⃣ Retrieving knowledge tree...")
     index = memory.retrieve("user1")
     print(index)
 
-    # Get specific topic
-    print("\n3️⃣ Getting specific topic (python_functions)...")
-    content = memory.get("user1", "python_functions")
-    if content:
-        print(content[:200] + "...")
+    # Get specific topics
+    print("\n3️⃣ Getting specific topics...")
+    if topic1:
+        content = memory.get("user1", topic1)
+        if content:
+            print(f"\n   📌 {topic1}:")
+            print(content[:150] + "...")
+
+    if generated_topic1:
+        content = memory.get("user1", generated_topic1)
+        if content:
+            print(f"\n   📌 {generated_topic1} (LLM-generated):")
+            print(content[:150] + "...")
 
     # List all topics
     print("\n4️⃣ Listing all topics...")

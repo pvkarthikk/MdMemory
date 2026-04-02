@@ -108,32 +108,46 @@ Please respond with a JSON object containing:
             print(f"LLM call error: {e}")
             return None
 
-    def store(self, usr_id: str, topic: str, query: str) -> bool:
+    def store(self, usr_id: str, query: str, topic: Optional[str] = None) -> Optional[str]:
         """Store a memory item.
 
         Args:
             usr_id: User ID
-            topic: Topic identifier
             query: The content to store
+            topic: Topic identifier (optional - LLM will generate if not provided)
 
         Returns:
-            True if successful
+            The topic ID that was used/generated, or None if failed
         """
+        # Prepare context for LLM
+        context = {"query": query, "user_id": usr_id}
+        if topic:
+            context["topic"] = topic
+        else:
+            context["topic"] = "NOT_PROVIDED - Please generate a concise topic ID from the query content"
+
         # Call LLM to determine folder path and frontmatter
-        llm_response = self._get_llm_decision(
-            "store", {"topic": topic, "query": query, "user_id": usr_id}
-        )
+        llm_response = self._get_llm_decision("store", context)
 
         if not llm_response:
-            # Fallback: store in a default location
-            recommended_path = "uncategorized"
+            # Fallback: use provided topic or generate simple one from query
+            if topic:
+                used_topic = topic
+                recommended_path = "uncategorized"
+            else:
+                # Generate simple topic from first 30 chars of query
+                used_topic = query[:30].replace(" ", "_").replace("\n", "_").lower()
+                recommended_path = "uncategorized"
+
             frontmatter = FrontMatter(
-                topic=topic,
+                topic=used_topic,
                 summary=query[:100],
                 tags=[],
                 created_at=datetime.now().isoformat(),
             )
         else:
+            # Use LLM-determined topic (from frontmatter or generated)
+            used_topic = llm_response.frontmatter.topic
             recommended_path = llm_response.recommended_path
             frontmatter = llm_response.frontmatter
 
@@ -144,7 +158,7 @@ Please respond with a JSON object containing:
         # Create file path
         folder_path = self.storage_path / recommended_path
         ensure_dir_exists(folder_path)
-        file_path = folder_path / f"{topic}.md"
+        file_path = folder_path / f"{used_topic}.md"
 
         # Write the file
         metadata = frontmatter.model_dump()
@@ -153,18 +167,18 @@ Please respond with a JSON object containing:
         if success:
             # Update registry
             relative_path = str(file_path.relative_to(self.storage_path))
-            self.registry.put(topic, relative_path)
+            self.registry.put(used_topic, relative_path)
 
             # Update parent index
-            self._update_index_for_path(recommended_path, topic, frontmatter.summary)
+            self._update_index_for_path(recommended_path, used_topic, frontmatter.summary)
 
             # Check if optimization is needed
             if llm_response and llm_response.optimize_suggested:
                 self.optimize(usr_id)
 
-            return True
+            return used_topic
 
-        return False
+        return None
 
     def _update_index_for_path(self, folder_path: str, topic: str, summary: str) -> None:
         """Update the appropriate index file for a folder.

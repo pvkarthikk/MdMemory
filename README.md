@@ -31,12 +31,20 @@ from litellm import LiteLLM
 llm = LiteLLM("gpt-3.5-turbo")
 memory = MdMemory(llm, storage_path="./knowledge_base", optimize_threshold=20)
 
-# Store a memory
-memory.store(
+# Store a memory WITH explicit topic
+topic = memory.store(
     usr_id="user123",
-    topic="python_decorators",
-    query="Decorators are functions that modify other functions..."
+    query="Decorators are functions that modify other functions...",
+    topic="python_decorators"  # Optional - provide explicit topic
 )
+
+# Store a memory WITHOUT topic - LLM generates one automatically
+generated_topic = memory.store(
+    usr_id="user123",
+    query="List comprehensions are concise ways to create lists in Python..."
+    # topic parameter omitted - LLM will infer topic from content
+)
+print(f"Generated topic: {generated_topic}")
 
 # Retrieve the knowledge tree
 index = memory.retrieve("user123")
@@ -110,9 +118,25 @@ group related files into sub-directories to keep the root index under 50 lines.
 
 Initialize MdMemory with an LLM instance and storage location.
 
-### `store(usr_id, topic, query) -> bool`
+### `store(usr_id, query, topic=None) -> Optional[str]`
 
 Store a new memory item.
+
+**Parameters:**
+- `usr_id`: User identifier
+- `query`: Content to store (Markdown text)
+- `topic` (optional): Topic identifier. If not provided, LLM will generate one from the query content
+
+**Returns:** The topic ID that was used or generated, or None if storage failed
+
+**Example:**
+```python
+# With explicit topic
+topic = memory.store("user1", "Content here", topic="my_topic")
+
+# With LLM-generated topic
+topic = memory.store("user1", "Content here")  # LLM generates topic from content
+```
 
 ### `retrieve(usr_id) -> str`
 

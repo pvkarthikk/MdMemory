@@ -19,13 +19,37 @@ class MockLLM:
     """Mock LLM for testing."""
 
     def completion(self, **kwargs):
-        """Mock completion method."""
+        """Mock completion method that parses the context."""
+        # Extract messages to determine the topic
+        messages = kwargs.get("messages", [])
+        topic = "generated_topic"
+
+        if messages:
+            content = messages[0].get("content", "")
+            # Try to extract topic from context
+            if '"topic"' in content:
+                import re
+                match = re.search(r'"topic":\s*"([^"]+)"', content)
+                if match:
+                    topic_value = match.group(1)
+                    if not topic_value.startswith("NOT_PROVIDED"):
+                        topic = topic_value
 
         class MockChoice:
             class MockMessage:
-                content = '{"action": "store", "recommended_path": "test", "frontmatter": {"topic": "test", "summary": "test summary", "tags": []}, "optimize_suggested": false}'
+                def __init__(self, t):
+                    self.content = f"""{{
+"action": "store",
+"recommended_path": "test",
+"frontmatter": {{
+    "topic": "{t}",
+    "summary": "test summary",
+    "tags": []
+}},
+"optimize_suggested": false
+}}"""
 
-            message = MockMessage()
+            message = MockMessage(topic)
 
         class MockResponse:
             choices = [MockChoice()]
@@ -104,43 +128,69 @@ class TestMdMemory:
 
     def test_store_creates_file(self, memory):
         """Test storing a memory item."""
-        result = memory.store("user1", "python_basics", "Python is a programming language...")
-        assert result is True
+        result = memory.store("user1", "Python is a programming language...")
+        assert result is not None
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+        # Check file exists (MockLLM returns "test" as path)
+        file_path = memory.storage_path / "test" / f"{result}.md"
+        assert file_path.exists()
+
+    def test_store_with_provided_topic(self, memory):
+        """Test storing with explicit topic parameter."""
+        result = memory.store("user1", "Python decorators content", topic="python_decorators")
+        assert result == "python_decorators"
 
         # Check file exists
-        file_path = memory.storage_path / "test" / "python_basics.md"
+        file_path = memory.storage_path / "test" / "python_decorators.md"
         assert file_path.exists()
+
+    def test_store_with_generated_topic(self, memory):
+        """Test storing without topic - system generates one."""
+        query = "Python functions are reusable blocks of code"
+        result = memory.store("user1", query)
+        assert result is not None
+        assert isinstance(result, str)
+
+        # Verify it was registered in the registry
+        topics = memory.list_topics()
+        assert result in topics
 
     def test_retrieve_root_index(self, memory):
         """Test retrieving root index."""
-        memory.store("user1", "test_topic", "Test content")
+        memory.store("user1", "Test content")
         index = memory.retrieve("user1")
         assert isinstance(index, str)
         assert len(index) > 0
 
     def test_get_topic(self, memory):
         """Test getting a specific topic."""
-        memory.store("user1", "my_topic", "My topic content")
-        content = memory.get("user1", "my_topic")
+        topic = memory.store("user1", "My topic content")
+        assert topic is not None
+        content = memory.get("user1", topic)
         assert content is not None
         assert "My topic content" in content
 
     def test_delete_topic(self, memory):
         """Test deleting a topic."""
-        memory.store("user1", "delete_me", "This will be deleted")
-        result = memory.delete("user1", "delete_me")
+        topic = memory.store("user1", "This will be deleted")
+        assert topic is not None
+        result = memory.delete("user1", topic)
         assert result is True
 
-        content = memory.get("user1", "delete_me")
+        content = memory.get("user1", topic)
         assert content is None
 
     def test_list_topics(self, memory):
         """Test listing all topics."""
-        memory.store("user1", "topic1", "Content 1")
-        memory.store("user1", "topic2", "Content 2")
+        topic1 = memory.store("user1", "Content 1")
+        topic2 = memory.store("user1", "Content 2")
+        assert topic1 is not None
+        assert topic2 is not None
         topics = memory.list_topics()
-        assert "topic1" in topics
-        assert "topic2" in topics
+        assert topic1 in topics
+        assert topic2 in topics
 
 
 class TestFrontMatter:
