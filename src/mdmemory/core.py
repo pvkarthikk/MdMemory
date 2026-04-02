@@ -146,7 +146,12 @@ class MdMemory:
 
     SYSTEM_PROMPT = """You are the MdMemory Librarian. Your goal is to maintain a clean, hierarchical Markdown Knowledge Tree. When storing data, choose a logical path. When optimizing, group related files into sub-directories to keep the root index under 50 lines. Always return JSON containing: `action`, `recommended_path`, `frontmatter`, and `optimize_suggested`."""
 
-    def __init__(self, llm_callback: LLMCallback, storage_path: str, optimize_threshold: int = 20):
+    def __init__(
+        self,
+        llm_callback: Optional[LLMCallback] = None,
+        storage_path: str = "./MdMemory",
+        optimize_threshold: int = 20,
+    ):
         """Initialize MdMemory.
 
         Args:
@@ -154,9 +159,14 @@ class MdMemory:
                          Signature: (messages: List[Dict[str, str]]) -> str
                          Messages format: [{"role": "user", "content": "prompt"}]
                          Should return LLM response as a string (preferably JSON)
-            storage_path: Root path for storage
+                         If not provided, uses LiteLLMCallback with gpt-3.5-turbo
+            storage_path: Root path for storage (default: ./MdMemory)
             optimize_threshold: Line count threshold for triggering optimize
         """
+        # Use LiteLLMCallback as default if not provided
+        if llm_callback is None:
+            llm_callback = LiteLLMCallback()
+
         self.llm_callback = llm_callback
         self.storage_path = Path(storage_path)
         self.optimize_threshold = optimize_threshold
