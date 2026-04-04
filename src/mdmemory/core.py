@@ -26,13 +26,17 @@ LLMCallback = Callable[[List[Dict[str, str]]], str]
 class LiteLLMCallback:
     """Built-in callback for LiteLLM integration."""
 
-    def __init__(self, model: str = "gpt-3.5-turbo"):
+    def __init__(self, model: str = "gpt-3.5-turbo", api_key: Optional[str] = None, base_url: Optional[str] = None):
         """Initialize LiteLLM callback.
 
         Args:
             model: LLM model name (default: gpt-3.5-turbo)
+            api_key: LiteLLM API key (if not set, uses LITELLM_API_KEY env var)
+            base_url: LiteLLM base URL (if not set, uses LITELLM_BASE_URL env var)
         """
         self.model = model
+        self.api_key = api_key
+        self.base_url = base_url
         self.completion = None
         self._initialize()
 
@@ -57,7 +61,7 @@ class LiteLLMCallback:
         if self.completion is None:
             self._initialize()
 
-        response = self.completion(model=self.model, messages=messages)
+        response = self.completion(model=self.model, messages=messages, api_key=self.api_key, base_url=self.base_url)
         return response.choices[0].message.content
 
 

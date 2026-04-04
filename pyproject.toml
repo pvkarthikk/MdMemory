@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mdmemory"
-version = "0.1.2"
+version = "0.2.0"
 description = "Markdown-first, LLM-driven memory framework organized into a hierarchical Knowledge Tree"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -37,7 +37,6 @@ classifiers = [
 ]
 dependencies = [
     "python-frontmatter>=1.0.0",
-    "litellm>=1.0.0",
     "aiofiles>=23.0.0",
     "pydantic>=2.0.0",
 ]
@@ -74,3 +73,9 @@ select = ["E", "F", "W", "I"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "litellm>=1.83.0",
+    "pytest>=8.4.2",
+]
