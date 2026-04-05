@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import re
 import shutil
 from datetime import datetime
@@ -26,7 +27,12 @@ LLMCallback = Callable[[List[Dict[str, str]]], str]
 class LiteLLMCallback:
     """Built-in callback for LiteLLM integration."""
 
-    def __init__(self, model: str = "gpt-3.5-turbo", api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(
+        self,
+        model: str = "gpt-3.5-turbo",
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ):
         """Initialize LiteLLM callback.
 
         Args:
@@ -61,7 +67,9 @@ class LiteLLMCallback:
         if self.completion is None:
             self._initialize()
 
-        response = self.completion(model=self.model, messages=messages, api_key=self.api_key, base_url=self.base_url)
+        response = self.completion(
+            model=self.model, messages=messages, api_key=self.api_key, base_url=self.base_url
+        )
         return response.choices[0].message.content
 
 
@@ -210,8 +218,25 @@ class MdMemory:
             LLMResponse or None if error
         """
         try:
-            # Prepare the prompt
-            prompt = f"""
+            if action == "optimize":
+                prompt = f"""
+{self.SYSTEM_PROMPT}
+
+Action: {action}
+Context: {json.dumps(context, indent=2)}
+
+Analyze the current structure and suggest reorganization to group related topics into subdirectories.
+
+Please respond with a JSON object containing:
+- action: "optimize"
+- recommended_path: "" (leave empty for optimize action)
+- frontmatter: {{}} (leave empty for optimize action)
+- optimize_suggested: true
+- reason: A JSON array of move operations, e.g.:
+  [{{"topic": "python_basics", "new_path": "coding/python", "summary": "Python basics"}}, ...]
+"""
+            else:
+                prompt = f"""
 {self.SYSTEM_PROMPT}
 
 Action: {action}
@@ -287,9 +312,10 @@ Please respond with a JSON object containing:
             recommended_path = llm_response.recommended_path
             frontmatter = llm_response.frontmatter
 
-        # Set timestamps
+        # Set timestamps and user_id
         frontmatter.created_at = datetime.now().isoformat()
         frontmatter.updated_at = datetime.now().isoformat()
+        frontmatter.user_id = usr_id
 
         # Create file path
         folder_path = self.storage_path / recommended_path
@@ -431,14 +457,22 @@ Please respond with a JSON object containing:
             file_path: File path (to find parent folders)
         """
         topic_title = parse_topic_title(topic)
+        pattern = re.compile(rf"- \*\*{re.escape(topic_title)}\*\*: .+\n?")
 
         # Update parent folder index if exists
         parent_index = file_path.parent / "index.md"
         if parent_index.exists():
             metadata, content = read_markdown_file(parent_index)
-            content = content.replace(f"- **{topic_title}**:", "")
-            if content.strip():
-                write_markdown_file(parent_index, metadata, content)
+            new_content = pattern.sub("", content).strip()
+            if new_content:
+                write_markdown_file(parent_index, metadata, new_content)
+
+        # Also check root index
+        if self.root_index_path.exists():
+            metadata, content = read_markdown_file(self.root_index_path)
+            new_content = pattern.sub("", content).strip()
+            if new_content:
+                write_markdown_file(self.root_index_path, metadata, new_content)
 
     def optimize(self, usr_id: str) -> None:
         """Optimize the knowledge tree structure.
@@ -450,37 +484,139 @@ Please respond with a JSON object containing:
         metadata, content = read_markdown_file(self.root_index_path)
         lines = content.strip().split("\n")
 
-        if len(lines) > self.optimize_threshold:
-            # Get list of folders and their files
-            folders = {}
-            for item in self.storage_path.iterdir():
-                if item.is_dir() and not item.name.startswith("."):
-                    md_files = list(item.glob("*.md"))
-                    if md_files:
-                        folders[item.name] = md_files
+        if len(lines) <= self.optimize_threshold:
+            return
 
-            # Call LLM to suggest optimization
-            context = {
-                "current_structure": list(folders.keys()),
-                "total_root_lines": len(lines),
-                "threshold": self.optimize_threshold,
-            }
+        # Filter topics by usr_id
+        user_topics = []
+        all_topics = self.registry.list_all()
+        for topic, relative_path in all_topics.items():
+            file_path = self.storage_path / relative_path
+            if file_path.exists():
+                fm_meta, _ = read_markdown_file(file_path)
+                if fm_meta.get("user_id") == usr_id:
+                    parent_dir = str(Path(relative_path).parent)
+                    if parent_dir == ".":
+                        parent_dir = "(root)"
+                    user_topics.append(
+                        {
+                            "topic": topic,
+                            "current_path": parent_dir,
+                            "summary": fm_meta.get("summary", ""),
+                        }
+                    )
 
-            llm_response = self._get_llm_decision("optimize", context)
+        if not user_topics:
+            return
 
-            if llm_response:
-                # LLM response should contain recommendations for reorganization
-                self._apply_optimization(llm_response)
+        # Call LLM to suggest optimization
+        context = {
+            "user_topics": user_topics,
+            "total_root_lines": len(lines),
+            "threshold": self.optimize_threshold,
+        }
+
+        llm_response = self._get_llm_decision("optimize", context)
+
+        if llm_response:
+            self._apply_optimization(llm_response)
+            self._compress_root_index()
 
     def _apply_optimization(self, llm_response: LLMResponse) -> None:
         """Apply optimization recommendations from LLM.
 
         Args:
-            llm_response: LLM response with optimization suggestions
+            llm_response: LLM response with optimization suggestions.
+                The `reason` field should be a JSON array of move operations:
+                [{"topic": "...", "new_path": "...", "summary": "..."}, ...]
         """
-        # This is a placeholder for applying optimization
-        # In production, the LLM response would contain specific reorganization steps
-        pass
+        try:
+            moves = json.loads(llm_response.reason or "[]")
+        except json.JSONDecodeError:
+            print("Optimization: could not parse LLM move recommendations")
+            return
+
+        for move in moves:
+            topic = move.get("topic")
+            new_path = move.get("new_path")
+            summary = move.get("summary", "")
+
+            if not topic or not new_path:
+                continue
+
+            old_relative = self.registry.get(topic)
+            if not old_relative:
+                continue
+
+            old_file = self.storage_path / old_relative
+            if not old_file.exists():
+                continue
+
+            # Create new directory
+            new_dir = self.storage_path / new_path
+            ensure_dir_exists(new_dir)
+
+            # Move file
+            new_file = new_dir / old_file.name
+            shutil.move(str(old_file), str(new_file))
+
+            # Update registry
+            new_relative = str(new_file.relative_to(self.storage_path))
+            self.registry.put(topic, new_relative)
+
+            # Prune old index entry
+            self._prune_from_indexes(topic, old_file)
+
+            # Update/create new sub-index
+            self._update_index_for_path(new_path, topic, summary)
+
+    def _compress_root_index(self) -> None:
+        """Compress root index by replacing sub-folder entries with folder links.
+
+        Only compresses folders that have 3+ markdown files (excluding index.md).
+        Walks the directory tree recursively to find qualifying directories.
+        """
+        metadata, content = read_markdown_file(self.root_index_path)
+
+        # Walk directory tree to find directories with index.md and 3+ md files
+        compressible_dirs = []
+        for dirpath, dirnames, filenames in sorted(os.walk(str(self.storage_path))):
+            dir_path = Path(dirpath)
+            # Skip root and hidden dirs
+            if dir_path == self.storage_path:
+                continue
+            if any(part.startswith(".") for part in dir_path.relative_to(self.storage_path).parts):
+                continue
+
+            sub_index = dir_path / "index.md"
+            if sub_index.exists():
+                md_files = [f for f in dir_path.glob("*.md") if f.name != "index.md"]
+                if len(md_files) >= 3:
+                    relative = dir_path.relative_to(self.storage_path)
+                    compressible_dirs.append(str(relative))
+
+        if not compressible_dirs:
+            return
+
+        # Rebuild root index: keep header + non-list lines, replace individual entries with folder links
+        lines = content.strip().split("\n")
+        header_lines = []
+        for line in lines:
+            if line.startswith("- "):
+                break
+            header_lines.append(line)
+
+        new_lines = header_lines + [""]
+
+        for dirpath in compressible_dirs:
+            # Use the first segment as the top-level category name
+            top_level = dirpath.split("/")[0].split("\\")[0]
+            title = top_level.replace("_", " ").title()
+            index_link = f"{dirpath}/index.md".replace("\\", "/")
+            new_lines.append(f"- **{title}/**: See [{title} index]({index_link})")
+
+        metadata["updated_at"] = datetime.now().isoformat()
+        write_markdown_file(self.root_index_path, metadata, "\n".join(new_lines))
 
     def list_topics(self) -> Dict[str, str]:
         """List all topics in the registry.

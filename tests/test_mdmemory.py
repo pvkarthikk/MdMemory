@@ -1,5 +1,6 @@
 """Tests for MdMemory."""
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -20,12 +21,10 @@ class MockLLM:
 
     def __call__(self, messages: list) -> str:
         """Mock LLM callback that parses messages and returns JSON response."""
-        # Extract messages to determine the topic
         topic = "generated_topic"
 
         if messages:
             content = messages[0].get("content", "")
-            # Try to extract topic from context
             if '"topic"' in content:
                 import re
 
@@ -35,17 +34,83 @@ class MockLLM:
                     if not topic_value.startswith("NOT_PROVIDED"):
                         topic = topic_value
 
-        # Return JSON response as string
-        return f"""{{
-"action": "store",
-"recommended_path": "test",
-"frontmatter": {{
-    "topic": "{topic}",
-    "summary": "test summary",
-    "tags": []
-}},
-"optimize_suggested": false
-}}"""
+            if "Action: optimize" in content:
+                return json.dumps(
+                    {
+                        "action": "optimize",
+                        "recommended_path": "",
+                        "frontmatter": {"topic": "", "summary": "", "tags": []},
+                        "optimize_suggested": True,
+                        "reason": json.dumps(
+                            [
+                                {
+                                    "topic": "python_basics",
+                                    "new_path": "coding/python",
+                                    "summary": "Python basics",
+                                },
+                                {
+                                    "topic": "python_functions",
+                                    "new_path": "coding/python",
+                                    "summary": "Python functions",
+                                },
+                                {
+                                    "topic": "python_classes",
+                                    "new_path": "coding/python",
+                                    "summary": "Python classes",
+                                },
+                            ]
+                        ),
+                    }
+                )
+
+        return json.dumps(
+            {
+                "action": "store",
+                "recommended_path": "test",
+                "frontmatter": {"topic": topic, "summary": "test summary", "tags": []},
+                "optimize_suggested": False,
+            }
+        )
+
+
+class OptimizeMockLLM:
+    """Mock LLM that returns specific move operations for optimize testing."""
+
+    def __init__(self, moves: list = None):
+        self.moves = moves or []
+
+    def __call__(self, messages: list) -> str:
+        content = messages[0].get("content", "") if messages else ""
+
+        if "Action: optimize" in content:
+            return json.dumps(
+                {
+                    "action": "optimize",
+                    "recommended_path": "",
+                    "frontmatter": {"topic": "", "summary": "", "tags": []},
+                    "optimize_suggested": True,
+                    "reason": json.dumps(self.moves),
+                }
+            )
+
+        topic = "generated_topic"
+        if '"topic"' in content:
+            import re
+
+            match = re.search(r'"topic":\s*"([^"]+)"', content)
+            if match:
+                topic_value = match.group(1)
+                if not topic_value.startswith("NOT_PROVIDED"):
+                    topic = topic_value
+
+        return json.dumps(
+            {
+                "action": "store",
+                "recommended_path": "root",
+                "frontmatter": {"topic": topic, "summary": "test summary", "tags": []},
+                "optimize_suggested": False,
+            }
+        )
 
 
 @pytest.fixture
@@ -124,7 +189,6 @@ class TestMdMemory:
         assert isinstance(result, str)
         assert len(result) > 0
 
-        # Check file exists (MockLLM returns "test" as path)
         file_path = memory.storage_path / "test" / f"{result}.md"
         assert file_path.exists()
 
@@ -133,7 +197,6 @@ class TestMdMemory:
         result = memory.store("user1", "Python decorators content", topic="python_decorators")
         assert result == "python_decorators"
 
-        # Check file exists
         file_path = memory.storage_path / "test" / "python_decorators.md"
         assert file_path.exists()
 
@@ -144,9 +207,18 @@ class TestMdMemory:
         assert result is not None
         assert isinstance(result, str)
 
-        # Verify it was registered in the registry
         topics = memory.list_topics()
         assert result in topics
+
+    def test_store_includes_user_id(self, memory):
+        """Test that store includes user_id in frontmatter."""
+        topic = memory.store("user42", "Content for user 42")
+        assert topic is not None
+
+        relative_path = memory.registry.get(topic)
+        file_path = memory.storage_path / relative_path
+        metadata, _ = read_markdown_file(file_path)
+        assert metadata.get("user_id") == "user42"
 
     def test_retrieve_root_index(self, memory):
         """Test retrieving root index."""
@@ -183,6 +255,98 @@ class TestMdMemory:
         assert topic1 in topics
         assert topic2 in topics
 
+    def test_optimize_reorganizes_files(self, temp_storage):
+        """Test that optimize moves files to new directories."""
+        moves = [
+            {"topic": "python_basics", "new_path": "coding/python", "summary": "Python basics"},
+            {
+                "topic": "python_functions",
+                "new_path": "coding/python",
+                "summary": "Python functions",
+            },
+        ]
+        llm = OptimizeMockLLM(moves=moves)
+        memory = MdMemory(llm, str(temp_storage), optimize_threshold=2)
+
+        # Store topics at root level
+        memory.store("user1", "Python basics content", topic="python_basics")
+        memory.store("user1", "Python functions content", topic="python_functions")
+
+        # Force root index to exceed threshold
+        memory._append_to_index(memory.root_index_path, "extra_topic_1", "Extra 1")
+        memory._append_to_index(memory.root_index_path, "extra_topic_2", "Extra 2")
+        memory._append_to_index(memory.root_index_path, "extra_topic_3", "Extra 3")
+
+        # Run optimize
+        memory.optimize("user1")
+
+        # Verify files were moved
+        new_file_1 = memory.storage_path / "coding" / "python" / "python_basics.md"
+        new_file_2 = memory.storage_path / "coding" / "python" / "python_functions.md"
+        assert new_file_1.exists()
+        assert new_file_2.exists()
+
+        # Verify registry updated
+        assert "coding" in memory.registry.get("python_basics")
+        assert "coding" in memory.registry.get("python_functions")
+
+    def test_optimize_filters_by_user_id(self, temp_storage):
+        """Test that optimize only processes topics for the given user."""
+        moves = [
+            {"topic": "user1_topic", "new_path": "coding/python", "summary": "User 1 topic"},
+        ]
+        llm = OptimizeMockLLM(moves=moves)
+        memory = MdMemory(llm, str(temp_storage), optimize_threshold=2)
+
+        # Store topics for different users
+        memory.store("user1", "User 1 content", topic="user1_topic")
+        memory.store("user2", "User 2 content", topic="user2_topic")
+
+        # Force threshold
+        memory._append_to_index(memory.root_index_path, "extra_1", "Extra 1")
+        memory._append_to_index(memory.root_index_path, "extra_2", "Extra 2")
+        memory._append_to_index(memory.root_index_path, "extra_3", "Extra 3")
+
+        # Optimize for user1 only
+        memory.optimize("user1")
+
+        # user1_topic should be moved
+        new_file = memory.storage_path / "coding" / "python" / "user1_topic.md"
+        assert new_file.exists()
+
+        # user2_topic should still be at root
+        user2_path = memory.registry.get("user2_topic")
+        assert user2_path is not None
+        assert "coding" not in user2_path
+
+    def test_compress_root_index(self, temp_storage):
+        """Test root index compression when folder has 3+ files."""
+        llm = OptimizeMockLLM(
+            moves=[
+                {"topic": "topic_a", "new_path": "coding/python", "summary": "Topic A"},
+                {"topic": "topic_b", "new_path": "coding/python", "summary": "Topic B"},
+                {"topic": "topic_c", "new_path": "coding/python", "summary": "Topic C"},
+            ]
+        )
+        memory = MdMemory(llm, str(temp_storage), optimize_threshold=2)
+
+        # Store 3 topics
+        memory.store("user1", "Content A", topic="topic_a")
+        memory.store("user1", "Content B", topic="topic_b")
+        memory.store("user1", "Content C", topic="topic_c")
+
+        # Force threshold
+        memory._append_to_index(memory.root_index_path, "extra_1", "Extra 1")
+        memory._append_to_index(memory.root_index_path, "extra_2", "Extra 2")
+        memory._append_to_index(memory.root_index_path, "extra_3", "Extra 3")
+
+        memory.optimize("user1")
+
+        # Verify root index contains folder link
+        _, root_content = read_markdown_file(memory.root_index_path)
+        assert "Coding" in root_content
+        assert "coding/python/index.md" in root_content
+
 
 class TestFrontMatter:
     """Test FrontMatter model."""
@@ -202,6 +366,16 @@ class TestFrontMatter:
         fm = FrontMatter(topic="test", summary="Test")
         assert fm.tags == []
 
+    def test_frontmatter_user_id(self):
+        """Test FrontMatter with user_id."""
+        fm = FrontMatter(topic="test", summary="Test", user_id="user42")
+        assert fm.user_id == "user42"
+
+    def test_frontmatter_default_user_id(self):
+        """Test FrontMatter default user_id is None."""
+        fm = FrontMatter(topic="test", summary="Test")
+        assert fm.user_id is None
+
 
 class TestLLMResponse:
     """Test LLMResponse model."""
@@ -217,3 +391,16 @@ class TestLLMResponse:
         )
         assert response.action == "store"
         assert response.optimize_suggested is True
+
+    def test_llm_response_with_reason(self):
+        """Test LLMResponse with reason field."""
+        frontmatter = FrontMatter(topic="test", summary="summary")
+        response = LLMResponse(
+            action="optimize",
+            recommended_path="",
+            frontmatter=frontmatter,
+            optimize_suggested=True,
+            reason='[{"topic": "a", "new_path": "coding"}]',
+        )
+        assert response.action == "optimize"
+        assert "topic" in response.reason
