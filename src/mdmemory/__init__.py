@@ -1,8 +1,8 @@
 """MdMemory - Markdown-first, LLM-driven memory framework.
 
-A Markdown-first, LLM-driven memory framework that organizes agent knowledge 
-into a hierarchical Knowledge Tree. It prioritizes context efficiency by using 
-a hierarchical folder structure and a "Hybrid Indexing" strategy, ensuring the 
+A Markdown-first, LLM-driven memory framework that organizes agent knowledge
+into a hierarchical Knowledge Tree. It prioritizes context efficiency by using
+a hierarchical folder structure and a "Hybrid Indexing" strategy, ensuring the
 agent only loads what is necessary.
 
 Core Features:
@@ -26,8 +26,7 @@ __author__ = "Contributors"
 __license__ = "MIT"
 __copyright__ = "Copyright 2026 Contributors"
 __description__ = (
-    "Markdown-first, LLM-driven memory framework organized "
-    "into a hierarchical Knowledge Tree"
+    "Markdown-first, LLM-driven memory framework organized into a hierarchical Knowledge Tree"
 )
 
 from .core import (
@@ -52,3 +51,11 @@ __all__ = [
     "__author__",
     "__license__",
 ]
+
+# Optional ADK integration
+try:
+    from .adk import MdMemoryService
+
+    __all__.append("MdMemoryService")
+except ImportError:
+    pass

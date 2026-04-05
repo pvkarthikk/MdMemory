@@ -57,6 +57,9 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
 ]
+adk = [
+    "google-adk>=0.1.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mdmemory"]
