@@ -8,6 +8,8 @@ A Markdown-first, LLM-driven memory framework that organizes agent knowledge int
 - **LLM-Organized**: Uses LLM to automatically determine folder structure and organization
 - **Context-Aware**: Hybrid indexing strategy keeps the root index compact
 - **Efficient Navigation**: Central `index.md` and `.registry.json` Path Map for direct access
+- **User-Scoped Optimization**: Each topic is tagged with a user ID, enabling per-user knowledge tree reorganization
+- **Auto-Compression**: Root index automatically compresses into folder links when subdirectories reach 3+ files
 
 ## Installation
 
@@ -123,7 +125,25 @@ The library queries the LLM for:
 
 1. **Path Recommendation**: Where to store new knowledge
 2. **Frontmatter Generation**: Metadata (summary, tags) for files
-3. **Optimization Suggestions**: When to reorganize structure
+3. **Optimization Suggestions**: When and how to reorganize structure
+
+#### User-Scoped Storage
+
+Every stored topic automatically includes a `user_id` field in its frontmatter metadata. This enables:
+
+- **Per-user optimization**: `optimize(usr_id)` only reorganizes topics belonging to that user
+- **Multi-user support**: Multiple users can share the same storage path without interference
+- **Frontmatter tracking**: User ID is persisted in each `.md` file's YAML frontmatter
+
+#### Index Compression
+
+When a subdirectory reaches 3+ markdown files, the root index automatically compresses individual entries into a single folder link:
+
+```markdown
+- **Coding/**: See [Coding index](coding/python/index.md)
+```
+
+This keeps the root index compact and navigable regardless of knowledge tree size.
 
 ### System Prompt
 
@@ -200,7 +220,16 @@ Remove a topic from memory.
 
 ### `optimize(usr_id) -> None`
 
-Reorganize knowledge tree structure.
+Reorganize knowledge tree structure for a specific user. Scans all topics belonging to `usr_id`, calls the LLM to suggest grouping related topics into subdirectories, moves files accordingly, and compresses the root index by replacing individual entries with folder links for directories with 3+ files.
+
+**Parameters:**
+- `usr_id`: User identifier (only topics with matching `user_id` in frontmatter will be optimized)
+
+**Example:**
+```python
+# Optimize only user123's topics
+memory.optimize("user123")
+```
 
 ### `list_topics() -> Dict[str, str]`
 
