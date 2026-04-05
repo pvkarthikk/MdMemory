@@ -10,6 +10,7 @@ class FrontMatter(BaseModel):
     topic: str
     summary: str
     tags: List[str] = Field(default_factory=list)
+    user_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     custom: Dict[str, Any] = Field(default_factory=dict)

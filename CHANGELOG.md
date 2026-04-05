@@ -35,12 +35,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Frontmatter metadata for each knowledge item
 - Optional automatic tree optimization
 
-## Unreleased
+## [Unreleased]
+
+### Added
+- User-scoped optimization: `optimize(usr_id)` now only reorganizes topics belonging to the specified user
+- `user_id` field added to `FrontMatter` model for per-user topic tracking
+- Automatic index compression: root index replaces individual entries with folder links when subdirectories reach 3+ files
+- `_apply_optimization()`: moves files to LLM-recommended directories and updates registry/indexes
+- `_compress_root_index()`: recursively walks directory tree to find qualifying folders and compresses root index
+- **Google ADK Integration**: `MdMemoryService` implementing ADK's `BaseMemoryService`
+  - `add_session_to_memory()`: converts ADK sessions to Markdown topics with LLM-generated semantic names
+  - `add_events_to_memory()`: appends event deltas to existing session files with fast session-id caching
+  - `add_memory()`: stores explicit `MemoryEntry` items as Markdown topics
+  - `search_memory()`: fast keyword matching across frontmatter summaries with user_id filtering
+- Optional `adk` dependency group: `pip install mdmemory[adk]`
+- Conditional export of `MdMemoryService` in `__init__.py`
+
+### Changed
+- `store()` now persists `user_id` in frontmatter metadata for all stored topics
+- `_get_llm_decision()` prompt updated for "optimize" action to return move operations as JSON array in `reason` field
+- `_prune_from_indexes()` now uses regex for proper line removal instead of naive string replacement
+- `optimize()` scans registry, filters topics by `usr_id` via frontmatter, and calls LLM with user-specific context
+
+### Fixed
+- `usr_id` parameter was previously unused; now properly tracked and utilized in optimization
 
 ### Planned
 - Async/await support for LLM callbacks
-- Multi-user support with user-specific indexes
 - Advanced search and filtering capabilities
 - Export/import functionality
 - Version history and reverting
 - Collaboration features
+- Semantic/vector search for `search_memory()`
