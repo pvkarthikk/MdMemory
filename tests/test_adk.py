@@ -1,7 +1,10 @@
 """Tests for MdMemoryService (Google ADK integration)."""
 
+import json
+import re
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from google.adk.memory.memory_entry import MemoryEntry
@@ -41,64 +44,68 @@ def _make_session(
     )
 
 
-class MockLLM:
-    """Mock LLM callback for testing."""
+def _make_mock_response(content: str) -> MagicMock:
+    """Create a mock litellm.completion response."""
+    mock = MagicMock()
+    mock.choices = [MagicMock()]
+    mock.choices[0].message = MagicMock()
+    mock.choices[0].message.content = content
+    return mock
 
-    def __call__(self, messages: list) -> str:
-        import json
-        import re
 
-        content = messages[0].get("content", "") if messages else ""
-        topic = "session_memory"
-        summary = "session memory"
+def _mock_llm(messages: list) -> str:
+    """Mock LLM logic for ADK tests."""
+    content = messages[0].get("content", "") if messages else ""
+    topic = "session_memory"
+    summary = "session memory"
 
-        if '"topic"' in content:
-            match = re.search(r'"topic":\s*"([^"]+)"', content)
-            if match:
-                topic_value = match.group(1)
-                if not topic_value.startswith("NOT_PROVIDED"):
-                    topic = topic_value
+    if '"topic"' in content:
+        match = re.search(r'"topic":\s*"([^"]+)"', content)
+        if match:
+            topic_value = match.group(1)
+            if not topic_value.startswith("NOT_PROVIDED"):
+                topic = topic_value
 
-        if "Python decorators" in content:
-            topic = "python_decorators"
-            summary = "Python decorators tutorial"
-        elif "Machine learning" in content:
-            topic = "machine_learning"
-            summary = "Machine learning basics"
-        elif "Cooking recipes" in content:
-            topic = "cooking_recipes"
-            summary = "Cooking recipes collection"
-        elif "Python basics" in content:
-            topic = "python_basics"
-            summary = "Python basics tutorial"
-        elif "Initial message" in content:
-            topic = "initial_conversation"
-            summary = "Initial conversation"
-        elif "Hello world" in content:
-            topic = "greeting"
-            summary = "Hello world greeting"
-        elif "Test content" in content:
-            topic = "test_content"
-            summary = "Test content"
-        elif "User prefers" in content:
-            topic = "user_preference"
-            summary = "User preferences"
-        elif "Orphan event" in content:
-            topic = "orphan_events"
-            summary = "Orphan events"
+    if "Python decorators" in content:
+        topic = "python_decorators"
+        summary = "Python decorators tutorial"
+    elif "Machine learning" in content:
+        topic = "machine_learning"
+        summary = "Machine learning basics"
+    elif "Cooking recipes" in content:
+        topic = "cooking_recipes"
+        summary = "Cooking recipes collection"
+    elif "Python basics" in content:
+        topic = "python_basics"
+        summary = "Python basics tutorial"
+    elif "Initial message" in content:
+        topic = "initial_conversation"
+        summary = "Initial conversation"
+    elif "Hello world" in content:
+        topic = "greeting"
+        summary = "Hello world greeting"
+    elif "Test content" in content:
+        topic = "test_content"
+        summary = "Test content"
+    elif "User prefers" in content:
+        topic = "user_preference"
+        summary = "User preferences"
+    elif "Orphan event" in content:
+        topic = "orphan_events"
+        summary = "Orphan events"
 
-        return json.dumps(
-            {
-                "action": "store",
-                "recommended_path": "memory",
-                "frontmatter": {
-                    "topic": topic,
-                    "summary": summary,
-                    "tags": [],
-                },
-                "optimize_suggested": False,
-            }
-        )
+    return json.dumps(
+        {
+            "action": "store",
+            "recommended_path": "memory",
+            "frontmatter": {
+                "topic": topic,
+                "summary": summary,
+                "tags": [],
+            },
+            "optimize_suggested": False,
+        }
+    )
 
 
 @pytest.fixture
@@ -111,7 +118,16 @@ def temp_storage():
 @pytest.fixture
 def mdmemory(temp_storage):
     """MdMemory instance with temp storage."""
-    return MdMemory(MockLLM(), str(temp_storage), optimize_threshold=100)
+    with patch(
+        "mdmemory.core.litellm.completion",
+        side_effect=lambda **kw: _make_mock_response(_mock_llm(kw.get("messages", []))),
+    ):
+        yield MdMemory(
+            model_name="gpt-3.5-turbo",
+            model_api_key="test-key",
+            storage_path=str(temp_storage),
+            optimize_threshold=100,
+        )
 
 
 @pytest.fixture
@@ -130,10 +146,15 @@ class TestMdMemoryServiceInit:
 
     def test_init_creates_mdmemory(self, temp_storage):
         """Test initializing creates MdMemory internally."""
-        service = MdMemoryService(
-            storage_path=str(temp_storage),
-            llm_callback=MockLLM(),
-        )
+        with patch(
+            "mdmemory.core.litellm.completion",
+            side_effect=lambda **kw: _make_mock_response(_mock_llm(kw.get("messages", []))),
+        ):
+            service = MdMemoryService(
+                model_name="gpt-3.5-turbo",
+                model_api_key="test-key",
+                storage_path=str(temp_storage),
+            )
         assert service._memory is not None
         assert service._memory.root_index_path.exists()
 

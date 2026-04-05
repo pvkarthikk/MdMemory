@@ -10,11 +10,11 @@ Core Features:
     - LLM-Organized: Uses LLM to automatically determine folder structure
     - Context-Aware: Hybrid indexing strategy keeps the root index compact
     - Efficient Navigation: Central index.md and .registry.json for direct access
-    - Provider Agnostic: Works with any LLM provider via callbacks
+    - Provider Agnostic: Uses LiteLLM to support any LLM provider via model_name
 
 Example Usage:
     >>> from mdmemory import MdMemory
-    >>> memory = MdMemory()  # Uses defaults: LiteLLMCallback + "./MdMemory"
+    >>> memory = MdMemory(model_name="gpt-3.5-turbo", model_api_key="your-key")
     >>> topic = memory.store("user1", "My knowledge content")
     >>> content = memory.get("user1", topic)
     >>> index = memory.retrieve("user1")
@@ -29,21 +29,11 @@ __description__ = (
     "Markdown-first, LLM-driven memory framework organized into a hierarchical Knowledge Tree"
 )
 
-from .core import (
-    MdMemory,
-    LLMCallback,
-    LiteLLMCallback,
-    OpenAICallback,
-    AnthropicCallback,
-)
+from .core import MdMemory
 from .models import FrontMatter, LLMResponse
 
 __all__ = [
     "MdMemory",
-    "LLMCallback",
-    "LiteLLMCallback",
-    "OpenAICallback",
-    "AnthropicCallback",
     "FrontMatter",
     "LLMResponse",
     "__version__",

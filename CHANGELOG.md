@@ -5,6 +5,22 @@ All notable changes to MdMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-05
+
+### Breaking Changes
+- **Removed callback pattern**: `llm_callback` parameter removed from `MdMemory.__init__`
+- **Removed callback classes**: `LLMCallback`, `LiteLLMCallback`, `OpenAICallback`, `AnthropicCallback` removed
+- `MdMemory.__init__` now requires `model_name` and `model_api_key` parameters directly
+
+### Added
+- Direct LiteLLM integration: `MdMemory` now uses `litellm.completion()` internally
+- `model_name`, `model_api_key`, `model_base_url` parameters for LLM configuration
+- `litellm` added as a required dependency
+
+### Changed
+- Simplified initialization: no callback boilerplate needed
+- `MdMemoryService` updated to use new `model_name`/`model_api_key` params
+
 ## [0.2.0] - 2023-04-04
 
 ### Fixed
@@ -16,13 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of MdMemory
 - Markdown-first, LLM-driven memory framework with hierarchical Knowledge Tree
-- Support for LLM callbacks with abstraction from provider dependencies
-- Built-in callbacks for LiteLLM, OpenAI, and Anthropic Claude
 - Hybrid indexing strategy with root and sub-indexes
 - Path registry system for efficient topic lookup
 - Full CRUD operations: store, retrieve, get, delete
 - Auto-optimization of knowledge tree structure
-- Default LiteLLMCallback and "./MdMemory" storage path for easy setup
 - Comprehensive unit tests (15 tests)
 - Full documentation in README and QUICKSTART
 
@@ -61,7 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `usr_id` parameter was previously unused; now properly tracked and utilized in optimization
 
 ### Planned
-- Async/await support for LLM callbacks
 - Advanced search and filtering capabilities
 - Export/import functionality
 - Version history and reverting

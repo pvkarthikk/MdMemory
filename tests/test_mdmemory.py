@@ -3,6 +3,7 @@
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -16,71 +17,73 @@ from mdmemory.utils import (
 )
 
 
-class MockLLM:
-    """Mock LLM callback for testing."""
+def _make_mock_response(content: str) -> MagicMock:
+    """Create a mock litellm.completion response."""
+    mock = MagicMock()
+    mock.choices = [MagicMock()]
+    mock.choices[0].message = MagicMock()
+    mock.choices[0].message.content = content
+    return mock
 
-    def __call__(self, messages: list) -> str:
-        """Mock LLM callback that parses messages and returns JSON response."""
-        topic = "generated_topic"
 
-        if messages:
-            content = messages[0].get("content", "")
-            if '"topic"' in content:
-                import re
+def _mock_llm(messages: list) -> str:
+    """Default mock LLM logic for store actions."""
+    content = messages[0].get("content", "")
+    topic = "generated_topic"
 
-                match = re.search(r'"topic":\s*"([^"]+)"', content)
-                if match:
-                    topic_value = match.group(1)
-                    if not topic_value.startswith("NOT_PROVIDED"):
-                        topic = topic_value
+    if '"topic"' in content:
+        import re
 
-            if "Action: optimize" in content:
-                return json.dumps(
-                    {
-                        "action": "optimize",
-                        "recommended_path": "",
-                        "frontmatter": {"topic": "", "summary": "", "tags": []},
-                        "optimize_suggested": True,
-                        "reason": json.dumps(
-                            [
-                                {
-                                    "topic": "python_basics",
-                                    "new_path": "coding/python",
-                                    "summary": "Python basics",
-                                },
-                                {
-                                    "topic": "python_functions",
-                                    "new_path": "coding/python",
-                                    "summary": "Python functions",
-                                },
-                                {
-                                    "topic": "python_classes",
-                                    "new_path": "coding/python",
-                                    "summary": "Python classes",
-                                },
-                            ]
-                        ),
-                    }
-                )
+        match = re.search(r'"topic":\s*"([^"]+)"', content)
+        if match:
+            topic_value = match.group(1)
+            if not topic_value.startswith("NOT_PROVIDED"):
+                topic = topic_value
 
+    if "Action: optimize" in content:
         return json.dumps(
             {
-                "action": "store",
-                "recommended_path": "test",
-                "frontmatter": {"topic": topic, "summary": "test summary", "tags": []},
-                "optimize_suggested": False,
+                "action": "optimize",
+                "recommended_path": "",
+                "frontmatter": {"topic": "", "summary": "", "tags": []},
+                "optimize_suggested": True,
+                "reason": json.dumps(
+                    [
+                        {
+                            "topic": "python_basics",
+                            "new_path": "coding/python",
+                            "summary": "Python basics",
+                        },
+                        {
+                            "topic": "python_functions",
+                            "new_path": "coding/python",
+                            "summary": "Python functions",
+                        },
+                        {
+                            "topic": "python_classes",
+                            "new_path": "coding/python",
+                            "summary": "Python classes",
+                        },
+                    ]
+                ),
             }
         )
 
+    return json.dumps(
+        {
+            "action": "store",
+            "recommended_path": "test",
+            "frontmatter": {"topic": topic, "summary": "test summary", "tags": []},
+            "optimize_suggested": False,
+        }
+    )
 
-class OptimizeMockLLM:
-    """Mock LLM that returns specific move operations for optimize testing."""
 
-    def __init__(self, moves: list = None):
-        self.moves = moves or []
+def _mock_llm_optimize(moves: list):
+    """Create mock LLM logic with specific optimize moves."""
 
-    def __call__(self, messages: list) -> str:
-        content = messages[0].get("content", "") if messages else ""
+    def llm(messages: list) -> str:
+        content = messages[0].get("content", "")
 
         if "Action: optimize" in content:
             return json.dumps(
@@ -89,7 +92,7 @@ class OptimizeMockLLM:
                     "recommended_path": "",
                     "frontmatter": {"topic": "", "summary": "", "tags": []},
                     "optimize_suggested": True,
-                    "reason": json.dumps(self.moves),
+                    "reason": json.dumps(moves),
                 }
             )
 
@@ -112,6 +115,8 @@ class OptimizeMockLLM:
             }
         )
 
+    return llm
+
 
 @pytest.fixture
 def temp_storage():
@@ -123,8 +128,16 @@ def temp_storage():
 @pytest.fixture
 def memory(temp_storage):
     """MdMemory instance with temp storage."""
-    llm_callback = MockLLM()
-    return MdMemory(llm_callback, str(temp_storage), optimize_threshold=5)
+    with patch(
+        "mdmemory.core.litellm.completion",
+        side_effect=lambda **kw: _make_mock_response(_mock_llm(kw.get("messages", []))),
+    ):
+        yield MdMemory(
+            model_name="gpt-3.5-turbo",
+            model_api_key="test-key",
+            storage_path=str(temp_storage),
+            optimize_threshold=5,
+        )
 
 
 class TestRegistry:
@@ -265,20 +278,29 @@ class TestMdMemory:
                 "summary": "Python functions",
             },
         ]
-        llm = OptimizeMockLLM(moves=moves)
-        memory = MdMemory(llm, str(temp_storage), optimize_threshold=2)
+        mock_fn = _mock_llm_optimize(moves)
+        with patch(
+            "mdmemory.core.litellm.completion",
+            side_effect=lambda **kw: _make_mock_response(mock_fn(kw.get("messages", []))),
+        ):
+            memory = MdMemory(
+                model_name="gpt-3.5-turbo",
+                model_api_key="test-key",
+                storage_path=str(temp_storage),
+                optimize_threshold=2,
+            )
 
-        # Store topics at root level
-        memory.store("user1", "Python basics content", topic="python_basics")
-        memory.store("user1", "Python functions content", topic="python_functions")
+            # Store topics at root level
+            memory.store("user1", "Python basics content", topic="python_basics")
+            memory.store("user1", "Python functions content", topic="python_functions")
 
-        # Force root index to exceed threshold
-        memory._append_to_index(memory.root_index_path, "extra_topic_1", "Extra 1")
-        memory._append_to_index(memory.root_index_path, "extra_topic_2", "Extra 2")
-        memory._append_to_index(memory.root_index_path, "extra_topic_3", "Extra 3")
+            # Force root index to exceed threshold
+            memory._append_to_index(memory.root_index_path, "extra_topic_1", "Extra 1")
+            memory._append_to_index(memory.root_index_path, "extra_topic_2", "Extra 2")
+            memory._append_to_index(memory.root_index_path, "extra_topic_3", "Extra 3")
 
-        # Run optimize
-        memory.optimize("user1")
+            # Run optimize
+            memory.optimize("user1")
 
         # Verify files were moved
         new_file_1 = memory.storage_path / "coding" / "python" / "python_basics.md"
@@ -295,20 +317,29 @@ class TestMdMemory:
         moves = [
             {"topic": "user1_topic", "new_path": "coding/python", "summary": "User 1 topic"},
         ]
-        llm = OptimizeMockLLM(moves=moves)
-        memory = MdMemory(llm, str(temp_storage), optimize_threshold=2)
+        mock_fn = _mock_llm_optimize(moves)
+        with patch(
+            "mdmemory.core.litellm.completion",
+            side_effect=lambda **kw: _make_mock_response(mock_fn(kw.get("messages", []))),
+        ):
+            memory = MdMemory(
+                model_name="gpt-3.5-turbo",
+                model_api_key="test-key",
+                storage_path=str(temp_storage),
+                optimize_threshold=2,
+            )
 
-        # Store topics for different users
-        memory.store("user1", "User 1 content", topic="user1_topic")
-        memory.store("user2", "User 2 content", topic="user2_topic")
+            # Store topics for different users
+            memory.store("user1", "User 1 content", topic="user1_topic")
+            memory.store("user2", "User 2 content", topic="user2_topic")
 
-        # Force threshold
-        memory._append_to_index(memory.root_index_path, "extra_1", "Extra 1")
-        memory._append_to_index(memory.root_index_path, "extra_2", "Extra 2")
-        memory._append_to_index(memory.root_index_path, "extra_3", "Extra 3")
+            # Force threshold
+            memory._append_to_index(memory.root_index_path, "extra_1", "Extra 1")
+            memory._append_to_index(memory.root_index_path, "extra_2", "Extra 2")
+            memory._append_to_index(memory.root_index_path, "extra_3", "Extra 3")
 
-        # Optimize for user1 only
-        memory.optimize("user1")
+            # Optimize for user1 only
+            memory.optimize("user1")
 
         # user1_topic should be moved
         new_file = memory.storage_path / "coding" / "python" / "user1_topic.md"
@@ -321,26 +352,34 @@ class TestMdMemory:
 
     def test_compress_root_index(self, temp_storage):
         """Test root index compression when folder has 3+ files."""
-        llm = OptimizeMockLLM(
-            moves=[
-                {"topic": "topic_a", "new_path": "coding/python", "summary": "Topic A"},
-                {"topic": "topic_b", "new_path": "coding/python", "summary": "Topic B"},
-                {"topic": "topic_c", "new_path": "coding/python", "summary": "Topic C"},
-            ]
-        )
-        memory = MdMemory(llm, str(temp_storage), optimize_threshold=2)
+        moves = [
+            {"topic": "topic_a", "new_path": "coding/python", "summary": "Topic A"},
+            {"topic": "topic_b", "new_path": "coding/python", "summary": "Topic B"},
+            {"topic": "topic_c", "new_path": "coding/python", "summary": "Topic C"},
+        ]
+        mock_fn = _mock_llm_optimize(moves)
+        with patch(
+            "mdmemory.core.litellm.completion",
+            side_effect=lambda **kw: _make_mock_response(mock_fn(kw.get("messages", []))),
+        ):
+            memory = MdMemory(
+                model_name="gpt-3.5-turbo",
+                model_api_key="test-key",
+                storage_path=str(temp_storage),
+                optimize_threshold=2,
+            )
 
-        # Store 3 topics
-        memory.store("user1", "Content A", topic="topic_a")
-        memory.store("user1", "Content B", topic="topic_b")
-        memory.store("user1", "Content C", topic="topic_c")
+            # Store 3 topics
+            memory.store("user1", "Content A", topic="topic_a")
+            memory.store("user1", "Content B", topic="topic_b")
+            memory.store("user1", "Content C", topic="topic_c")
 
-        # Force threshold
-        memory._append_to_index(memory.root_index_path, "extra_1", "Extra 1")
-        memory._append_to_index(memory.root_index_path, "extra_2", "Extra 2")
-        memory._append_to_index(memory.root_index_path, "extra_3", "Extra 3")
+            # Force threshold
+            memory._append_to_index(memory.root_index_path, "extra_1", "Extra 1")
+            memory._append_to_index(memory.root_index_path, "extra_2", "Extra 2")
+            memory._append_to_index(memory.root_index_path, "extra_3", "Extra 3")
 
-        memory.optimize("user1")
+            memory.optimize("user1")
 
         # Verify root index contains folder link
         _, root_content = read_markdown_file(memory.root_index_path)

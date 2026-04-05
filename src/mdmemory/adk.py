@@ -29,23 +29,33 @@ class MdMemoryService(BaseMemoryService):
     def __init__(
         self,
         mdmemory: Optional[MdMemory] = None,
+        model_name: Optional[str] = None,
+        model_api_key: Optional[str] = None,
+        model_base_url: Optional[str] = None,
         storage_path: str = "./MdMemory",
         optimize_threshold: int = 20,
-        llm_callback: Any = None,
     ):
         """Initialize MdMemoryService.
 
         Args:
             mdmemory: Existing MdMemory instance. If None, one is created.
+            model_name: LLM model name (used if mdmemory is None).
+            model_api_key: API key for the model provider (used if mdmemory is None).
+            model_base_url: Base URL for the model API (used if mdmemory is None).
             storage_path: Root path for storage (used if mdmemory is None).
             optimize_threshold: Line count threshold for triggering optimize.
-            llm_callback: LLM callback for MdMemory (used if mdmemory is None).
         """
         if mdmemory is not None:
             self._memory = mdmemory
         else:
+            if model_name is None or model_api_key is None:
+                raise ValueError(
+                    "model_name and model_api_key are required when mdmemory is not provided"
+                )
             self._memory = MdMemory(
-                llm_callback=llm_callback,
+                model_name=model_name,
+                model_api_key=model_api_key,
+                model_base_url=model_base_url,
                 storage_path=storage_path,
                 optimize_threshold=optimize_threshold,
             )

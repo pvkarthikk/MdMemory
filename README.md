@@ -36,28 +36,10 @@ pip install mdmemory[adk]
 ```python
 from mdmemory import MdMemory
 
-# Define your LLM callback function
-# It receives messages and should return LLM response as a string
-def llm_callback(messages: list) -> str:
-    """
-    LLM callback function that handles LLM provider communication.
-    
-    You can use any LLM provider: OpenAI, Claude, Gemini, Ollama, etc.
-    """
-    # Example with LiteLLM (supports all major providers)
-    from litellm import completion
-    response = completion(model="gpt-3.5-turbo", messages=messages)
-    return response.choices[0].message.content
-    
-    # Or use OpenAI directly
-    # from openai import OpenAI
-    # client = OpenAI()
-    # response = client.chat.completions.create(model="gpt-3.5-turbo", messages=messages)
-    # return response.choices[0].message.content
-
-# Initialize MdMemory with the callback
+# Initialize MdMemory with your LLM configuration
 memory = MdMemory(
-    llm_callback,
+    model_name="gpt-3.5-turbo",
+    model_api_key="your-api-key",
     storage_path="./knowledge_base",
     optimize_threshold=20
 )
@@ -163,35 +145,31 @@ group related files into sub-directories to keep the root index under 50 lines.
 
 ## API Reference
 
-### `__init__(llm_callback, storage_path, optimize_threshold=20)`
+### `__init__(model_name, model_api_key, model_base_url=None, storage_path="./MdMemory", optimize_threshold=20)`
 
-Initialize MdMemory with an LLM callback function.
+Initialize MdMemory with LLM configuration.
 
 **Parameters:**
-- `llm_callback`: Callback function that receives messages and returns LLM response
-  - Signature: `(messages: List[Dict[str, str]]) -> str`
-  - Messages format: `[{"role": "user", "content": "prompt"}]`
-  - Should return the LLM response as a string (preferably JSON)
+- `model_name`: LLM model name (e.g., `"gpt-3.5-turbo"`, `"claude-3-sonnet"`, `"ollama/llama3"`)
+- `model_api_key`: API key for the model provider
+- `model_base_url` (optional): Base URL for the model API (for proxies, local models, etc.)
 - `storage_path`: Root directory path for storing markdown files
 - `optimize_threshold` (optional): Line count threshold for triggering auto-optimization (default: 20)
 
 **Example:**
 ```python
-# Define a callback for your LLM provider
-def llm_callback(messages):
-    # Use any LLM provider here
-    from litellm import completion
-    response = completion(model="gpt-3.5-turbo", messages=messages)
-    return response.choices[0].message.content
+# OpenAI
+memory = MdMemory(model_name="gpt-3.5-turbo", model_api_key="sk-...")
 
-memory = MdMemory(llm_callback, "./knowledge_base")
+# Anthropic Claude
+memory = MdMemory(model_name="claude-3-sonnet-20240229", model_api_key="sk-ant-...")
 
-# Or use built-in callbacks
-from mdmemory import LiteLLMCallback, OpenAICallback, AnthropicCallback
-
-memory = MdMemory(LiteLLMCallback("gpt-3.5-turbo"), "./knowledge_base")
-memory = MdMemory(OpenAICallback("gpt-4"), "./knowledge_base")
-memory = MdMemory(AnthropicCallback("claude-3-sonnet"), "./knowledge_base")
+# Local model via Ollama
+memory = MdMemory(
+    model_name="ollama/llama3",
+    model_api_key="ollama",
+    model_base_url="http://localhost:11434"
+)
 ```
 
 ### `store(usr_id, query, topic=None) -> Optional[str]`
