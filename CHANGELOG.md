@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic index compression: root index replaces individual entries with folder links when subdirectories reach 3+ files
 - `_apply_optimization()`: moves files to LLM-recommended directories and updates registry/indexes
 - `_compress_root_index()`: recursively walks directory tree to find qualifying folders and compresses root index
+- **Google ADK Integration**: `MdMemoryService` implementing ADK's `BaseMemoryService`
+  - `add_session_to_memory()`: converts ADK sessions to Markdown topics with LLM-generated semantic names
+  - `add_events_to_memory()`: appends event deltas to existing session files with fast session-id caching
+  - `add_memory()`: stores explicit `MemoryEntry` items as Markdown topics
+  - `search_memory()`: fast keyword matching across frontmatter summaries with user_id filtering
+- Optional `adk` dependency group: `pip install mdmemory[adk]`
+- Conditional export of `MdMemoryService` in `__init__.py`
 
 ### Changed
 - `store()` now persists `user_id` in frontmatter metadata for all stored topics
@@ -59,3 +66,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Export/import functionality
 - Version history and reverting
 - Collaboration features
+- Semantic/vector search for `search_memory()`
