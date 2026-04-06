@@ -48,9 +48,9 @@ class MdMemoryService(BaseMemoryService):
         if mdmemory is not None:
             self._memory = mdmemory
         else:
-            if model_name is None or model_api_key is None:
+            if model_name is None:
                 raise ValueError(
-                    "model_name and model_api_key are required when mdmemory is not provided"
+                    "model_name is required when mdmemory is not provided"
                 )
             self._memory = MdMemory(
                 model_name=model_name,

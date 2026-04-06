@@ -29,7 +29,7 @@ class MdMemory:
     def __init__(
         self,
         model_name: str,
-        model_api_key: str,
+        model_api_key: Optional[str] = None,
         model_base_url: Optional[str] = None,
         storage_path: str = "./MdMemory",
         optimize_threshold: int = 20,
@@ -83,11 +83,12 @@ class MdMemory:
         """
         kwargs = {
             "model": self._model_name,
-            "api_key": self._model_api_key,
             "messages": messages,
         }
         if self._model_base_url:
             kwargs["api_base"] = self._model_base_url
+        if self._model_api_key:
+            kwargs["api_key"] = self._model_api_key
 
         response = litellm.completion(**kwargs)
         return response.choices[0].message.content
