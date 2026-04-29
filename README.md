@@ -108,6 +108,26 @@ To use MdMemory with Claude Desktop, add this to your `claude_desktop_config.jso
 }
 ```
 
+### SSE Configuration (Remote/Web)
+
+To run the MCP server as a web service using Server-Sent Events (SSE):
+
+```bash
+mdmemory-mcp --transport sse --host 0.0.0.0 --port 8000
+```
+
+Example `claude_desktop_config.json` for connecting to a remote SSE server:
+
+```json
+{
+  "mcpServers": {
+    "mdmemory-remote": {
+      "url": "http://your-server-ip:8000/sse"
+    }
+  }
+}
+```
+
 ## Directory Structure
 
 ```
