@@ -81,6 +81,33 @@ mdmemory-mcp --transport sse --host 0.0.0.0 --port 8000
 - **Resources**: `mdmemory://index`, `mdmemory://topic/{topic_id}`.
 - **Prompts**: `summarize_knowledge`.
 
+### Sample Configuration (Claude Desktop)
+
+To use MdMemory with Claude Desktop, add this to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "mdmemory": {
+      "command": "python",
+      "args": [
+        "-m",
+        "mdmemory.mcp",
+        "--usr_id",
+        "your_user_name",
+        "--storage",
+        "/absolute/path/to/memory"
+      ],
+      "env": {
+        "MDMEMORY_MODEL": "gpt-4",
+        "MDMEMORY_API_KEY": "your_api_key_here",
+        "MDMEMORY_BASE_URL": "https://api.openai.com/v1"
+      }
+    }
+  }
+}
+```
+
 ## Directory Structure
 
 ```

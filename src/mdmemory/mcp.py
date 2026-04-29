@@ -23,12 +23,14 @@ class MdMemoryMCPServer:
         usr_id: str,
         model_name: str,
         model_api_key: Optional[str] = None,
+        model_base_url: Optional[str] = None,
         storage_path: str = "./MdMemory",
     ):
         self.usr_id = usr_id
         self.memory = MdMemory(
             model_name=model_name,
             model_api_key=model_api_key,
+            model_base_url=model_base_url,
             storage_path=storage_path
         )
         self.server = Server("mdmemory")
@@ -233,6 +235,7 @@ def main():
     parser.add_argument("--port", type=int, default=8000, help="Port for SSE")
     parser.add_argument("--storage", help="Storage path")
     parser.add_argument("--model", help="LLM model name")
+    parser.add_argument("--base_url", help="LLM API base URL")
     
     args = parser.parse_args()
     
@@ -243,12 +246,14 @@ def main():
         
     model_name = args.model or os.environ.get("MDMEMORY_MODEL") or "gpt-3.5-turbo"
     api_key = os.environ.get("MDMEMORY_API_KEY")
+    base_url = args.base_url or os.environ.get("MDMEMORY_BASE_URL")
     storage_path = args.storage or os.environ.get("MDMEMORY_STORAGE") or "./MdMemory"
     
     server_wrapper = MdMemoryMCPServer(
         usr_id=usr_id,
         model_name=model_name,
         model_api_key=api_key,
+        model_base_url=base_url,
         storage_path=storage_path
     )
     
