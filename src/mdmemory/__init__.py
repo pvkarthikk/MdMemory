@@ -32,6 +32,13 @@ __description__ = (
 from .core import MdMemory
 from .models import FrontMatter, LLMResponse
 
+# Optional MCP integration
+try:
+    from .mcp import MdMemoryMCPServer
+    __mcp_available__ = True
+except ImportError:
+    __mcp_available__ = False
+
 __all__ = [
     "MdMemory",
     "FrontMatter",
@@ -42,10 +49,6 @@ __all__ = [
     "__license__",
 ]
 
-# Optional ADK integration
-try:
-    from .adk import MdMemoryService
+if __mcp_available__:
+    __all__.append("MdMemoryMCPServer")
 
-    __all__.append("MdMemoryService")
-except ImportError:
-    pass

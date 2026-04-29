@@ -23,13 +23,6 @@ Or with development dependencies:
 pip install -e ".[dev]"
 ```
 
-### Google ADK Integration
-
-To use MdMemory as a memory service for Google ADK agents:
-
-```bash
-pip install mdmemory[adk]
-```
 
 ## Quick Start
 
@@ -223,76 +216,6 @@ List all topics in the registry.
 
 ---
 
-## Google ADK Integration
-
-MdMemory provides `MdMemoryService`, a drop-in implementation of Google ADK's `BaseMemoryService`. This lets your ADK agents use MdMemory's persistent, human-readable Markdown knowledge tree as their long-term memory backend.
-
-### Setup
-
-```python
-from mdmemory import MdMemoryService
-
-# Create the service (uses default storage path)
-memory_service = MdMemoryService()
-
-# Or with custom configuration
-memory_service = MdMemoryService(
-    storage_path="./agent_memory",
-    optimize_threshold=20,
-    llm_callback=my_llm_callback,  # optional
-)
-```
-
-### Usage with ADK Runner
-
-```python
-from google.adk.agents import Agent
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from mdmemory import MdMemoryService
-
-memory_service = MdMemoryService(storage_path="./memory")
-session_service = InMemorySessionService()
-
-runner = Runner(
-    agent=my_agent,
-    app_name="my_app",
-    session_service=session_service,
-    memory_service=memory_service,
-)
-```
-
-### How It Works
-
-| ADK Method | MdMemory Behavior |
-|------------|-------------------|
-| `add_session_to_memory(session)` | Converts session events to Markdown, LLM generates semantic topic, stores as `.md` file |
-| `add_events_to_memory(...)` | Appends new user/agent exchanges to existing session's Markdown file |
-| `add_memory(...)` | Stores explicit `MemoryEntry` items as Markdown topics |
-| `search_memory(query)` | Fast keyword search across frontmatter summaries; returns matching `MemoryEntry` objects |
-
-### Search Performance
-
-`search_memory` is optimized for speed:
-1. Iterates the in-memory registry (O(1) dict lookup)
-2. Reads only frontmatter (small YAML block) for filtering
-3. Filters by `user_id` before reading full content
-4. Keyword matches against topic name and summary
-5. Only reads full Markdown content for actual matches
-
-### Giving Your Agent Memory Tools
-
-```python
-from google.adk.tools.preload_memory_tool import PreloadMemoryTool
-
-agent = Agent(
-    model="gemini-2.0-flash",
-    name="memory_agent",
-    instruction="You have access to long-term memory. Use it to recall past conversations.",
-    tools=[PreloadMemoryTool()],
-)
-```
-
 ## Development
 
 ### Running Tests
@@ -313,6 +236,6 @@ mypy src/
 
 MIT
 
-## Specification
+## Requirements & Design
 
-See [spec.md](spec.md) for the full implementation specification.
+See [requirements.md](requirements.md) and [design.md](design.md) for detailed specifications.
